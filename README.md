@@ -14,7 +14,17 @@ flash is running. Do not flash a file that did not come from this repository.
 
 ## What the custom firmware changes
 
-Base: stock firmware **0.33** for each half, with one change.
+Base: stock firmware **0.33** for each half, with two changes. The `axisusb-autoconnect`
+images carry both; the `axisusb` images carry the axis swap only.
+
+**A docked half connects by itself on the Switch 2.** Docked on a Switch 2, the half turns
+into a wired Pro Controller, and the console makes a wired Pro Controller a player only after
+a button press on it — every time it is docked and every time the console wakes from sleep —
+and swallows that press. The custom firmware supplies the press itself: for the first moments
+after docking it reports a stick click (L3 on the left half, R3 on the right) every quarter
+second until the console has taken the half as a player. At most one stray stick click can
+reach a game right after docking or waking. Docking to "connected" still takes about two
+seconds; that is the console's own handshake.
 
 **The gyro axis swap follows the connection.** Stock firmware applies the axis swap whenever the
 app's "axis swap" switch is on, regardless of how the controller is connected. The custom
@@ -31,7 +41,7 @@ The app's "axis swap" switch is still there and now sets the polarity:
 Nothing else is touched: stored settings, remaps, macros, turbo, lighting and the update path all
 work as before. The reported version stays 0.33, so the vendor app treats the half as up to date.
 
-Both halves have been flashed with these images and verified on a Switch.
+Both halves have been flashed with the `axisusb-autoconnect` images and verified on a Switch 2.
 
 ### Known limitations
 
@@ -49,8 +59,10 @@ In both cases flipping the app's "axis swap" switch for the session gives the ri
 
 | Path | What |
 |---|---|
-| `firmware/custom/M12-HD-L-0.33-axisusb.bin` | custom image, **left** half |
-| `firmware/custom/M12-HD-R-0.33-axisusb.bin` | custom image, **right** half |
+| `firmware/custom/M12-HD-L-0.33-axisusb-autoconnect.bin` | both changes, **left** half |
+| `firmware/custom/M12-HD-R-0.33-axisusb-autoconnect.bin` | both changes, **right** half |
+| `firmware/custom/M12-HD-L-0.33-axisusb.bin` | axis swap only, **left** half |
+| `firmware/custom/M12-HD-R-0.33-axisusb.bin` | axis swap only, **right** half |
 | `otaflash.py` | the flasher |
 | `att.py`, `jlfw.py`, `mobapad.py` | modules the flasher needs, keep them next to it |
 
@@ -79,7 +91,7 @@ No Python packages are needed for flashing. Only `mobapad.py scan` needs `bleak`
    send. Nothing is written without `--confirm`.
 
    ```
-   sudo python3 otaflash.py flash firmware/custom/M12-HD-L-0.33-axisusb.bin --address AA:BB:CC:DD:EE:FF
+   sudo python3 otaflash.py flash firmware/custom/M12-HD-L-0.33-axisusb-autoconnect.bin --address AA:BB:CC:DD:EE:FF
    ```
 
    Check that the reported name matches the image (`M12-HD-L` for the left image) and the battery
@@ -88,7 +100,7 @@ No Python packages are needed for flashing. Only `mobapad.py scan` needs `bleak`
 3. Flash for real:
 
    ```
-   sudo python3 otaflash.py flash firmware/custom/M12-HD-L-0.33-axisusb.bin --address AA:BB:CC:DD:EE:FF --confirm
+   sudo python3 otaflash.py flash firmware/custom/M12-HD-L-0.33-axisusb-autoconnect.bin --address AA:BB:CC:DD:EE:FF --confirm
    ```
 
    Takes four to six minutes. Progress is printed every 10 KB. At the end you should see
