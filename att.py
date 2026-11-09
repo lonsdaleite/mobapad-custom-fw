@@ -2,17 +2,18 @@
 """Raw ATT transport for the Mobapad M12 HD.
 
 BlueZ is unusable with this device: its GATT server answers Read By Group Type
-(so the service ranges are visible) but returns "Attribute Not Found" for
-characteristic and descriptor discovery. BlueZ therefore never learns the FF00
-characteristics, and bleak sees an empty device. This module talks ATT over an
-L2CAP socket on CID 4 instead, deriving handles from the service ranges.
+(so the service ranges are visible) but answers characteristic and descriptor
+discovery only for ranges bounded to one service, and BlueZ's discovery gets
+"Attribute Not Found". BlueZ therefore never learns the FF00 characteristics, and
+bleak sees an empty device. This module talks ATT over an L2CAP socket on CID 4
+instead, deriving handles from the service ranges.
 
 Two device quirks drive the design:
 
-* Characteristic handles cannot be discovered. They are computed from the
+* Characteristic handles are not discovered. They are computed from the
   service range using the standard GATT layout (declaration, value, optional
   CCCD), which was verified on hardware against 180A, whose value handles read
-  back correctly.
+  back correctly, and against the Android/Windows discovery traces.
 * Commands must be sent as ATT Write Command (no response). The firmware ACKs a
   Write Request at the protocol level and then silently drops it.
 """
@@ -24,6 +25,7 @@ import os
 import select
 import socket
 import struct
+import sys
 import time
 
 BTPROTO_L2CAP = 0
@@ -55,7 +57,7 @@ UUID_CMD_SERVICE = "ff00"
 UUID_OTA_SERVICE = "ff10"
 UUID_DEVICE_INFO = "180a"
 
-libc = ctypes.CDLL("libc.so.6", use_errno=True)
+libc = ctypes.CDLL("libc.so.6", use_errno=True) if sys.platform == "linux" else None
 
 
 class SockaddrL2(ctypes.Structure):
@@ -80,8 +82,36 @@ class LinkLost(AttError):
     """The half went away mid-conversation (it sleeps aggressively)."""
 
 
+class ConnectError(AttError):
+    """Preserve the socket errno without interpreting it as an HCI status."""
+
+    def __init__(self, operation: str, error: int):
+        self.errno = error
+        super().__init__(f"{operation}: {os.strerror(error)}")
+
+
 def connect(dst: str, wait: float = 40.0, dst_type: int = BDADDR_LE_PUBLIC,
             src: str = "00:00:00:00:00:00") -> socket.socket:
+    """Connect, retrying ENOSYS once after a 15-second cooldown.
+
+    `wait` bounds each connection attempt. Only the initial socket handshake
+    is retried: no ATT requests, configuration commands or OTA data are replayed.
+    Linux also maps unrecognized Bluetooth status codes to ENOSYS; a repeated
+    failure needs HCI diagnostics rather than an unbounded reconnect loop.
+    Worst-case connection budget: 2 * wait + 15 seconds.
+    """
+    try:
+        return _connect_once(dst, wait, dst_type, src)
+    except ConnectError as error:
+        if error.errno != errno.ENOSYS:
+            raise
+        print("BLE connect returned ENOSYS; waiting 15 seconds, then retrying once …",
+              file=sys.stderr, flush=True)
+        time.sleep(15)
+        return _connect_once(dst, wait, dst_type, src)
+
+
+def _connect_once(dst: str, wait: float, dst_type: int, src: str) -> socket.socket:
     """Open an ATT channel, waiting for the half to start advertising.
 
     The connect is issued non-blocking and left pending, so the kernel completes
@@ -106,16 +136,17 @@ def connect(dst: str, wait: float = 40.0, dst_type: int = BDADDR_LE_PUBLIC,
         e = ctypes.get_errno()
         if e != errno.EINPROGRESS:
             os.close(fd)
-            raise AttError(f"connect: {os.strerror(e)}")
+            raise ConnectError("connect", e)
         _, w, _ = select.select([], [fd], [], wait)
         if not w:
             os.close(fd)
             raise AttError("timed out waiting for the half to advertise "
                            "(press its pairing button and retry)")
-        err = socket.socket(fileno=os.dup(fd)).getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+        with socket.socket(fileno=os.dup(fd)) as pending:
+            err = pending.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
         if err:
             os.close(fd)
-            raise AttError(f"connect failed: {os.strerror(err)}")
+            raise ConnectError("connect failed", err)
 
     os.set_blocking(fd, True)
     sock = socket.socket(fileno=fd)
@@ -211,7 +242,29 @@ class Att:
             start = out[-1][1] + 1
         return out
 
+    def close(self) -> None:
+        self.sock.close()
+
     # -- notifications ------------------------------------------------------
+
+    def next_notification(self, timeout: float) -> tuple[int, bytes] | None:
+        """Return (handle, payload) for the next notification, None on timeout."""
+        deadline = time.time() + timeout
+        while True:
+            left = deadline - time.time()
+            if left <= 0:
+                return None
+            r, _, _ = select.select([self.sock], [], [], left)
+            if not r:
+                return None
+            try:
+                pdu = self.sock.recv(1024)
+            except OSError as e:
+                raise LinkLost(f"link dropped while reading: {e}") from e
+            if not pdu:
+                raise LinkLost("link closed by the device")
+            if pdu[0] in (ATT_HANDLE_NOTIFY, ATT_HANDLE_INDICATE) and len(pdu) >= 3:
+                return pdu[1] | pdu[2] << 8, pdu[3:]
 
     def collect(self, seconds: float) -> list[bytes]:
         """Gather notification payloads from the command characteristic."""
@@ -255,6 +308,14 @@ class Handles:
     def __repr__(self) -> str:
         return (f"Handles(cmd=0x{self.cmd:04X}, notify=0x{self.notify:04X}, "
                 f"cccd=0x{self.cccd:04X})")
+
+
+def open_link(address: str, wait: float = 40.0, verbose: bool = False):
+    """A connected transport for this platform: raw ATT on Linux, CoreBluetooth on macOS."""
+    if sys.platform == "darwin":
+        from att_bleak import open_link as open_bleak
+        return open_bleak(address, wait, verbose)
+    return Att(connect(address, wait=wait), verbose=verbose)
 
 
 def find_ranges(att: Att) -> dict[str, tuple[int, int]]:

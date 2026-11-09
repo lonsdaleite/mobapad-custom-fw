@@ -5,13 +5,13 @@ Implements the "KR" protocol documented in ../PROTOCOL.md over a raw ATT
 socket -- see att.py for why BlueZ/bleak cannot be used for the command channel.
 
     python3 mobapad.py scan
-    python3 mobapad.py all      --address A0:58:5F:B0:58:11
+    python3 mobapad.py all      --address AA:BB:CC:DD:EE:FF
     python3 mobapad.py info     --name "Mobapad M12-HD-L"
-    python3 mobapad.py caps     --address A0:58:5F:B0:58:11
-    python3 mobapad.py remaps   --address A0:58:5F:B0:58:11
-    python3 mobapad.py config   --address A0:58:5F:B0:58:11
-    python3 mobapad.py macros   --address A0:58:5F:B0:58:11
-    python3 mobapad.py gyro     --address A0:58:5F:B0:58:11
+    python3 mobapad.py caps     --address AA:BB:CC:DD:EE:FF
+    python3 mobapad.py remaps   --address AA:BB:CC:DD:EE:FF
+    python3 mobapad.py config   --address AA:BB:CC:DD:EE:FF
+    python3 mobapad.py macros   --address AA:BB:CC:DD:EE:FF
+    python3 mobapad.py gyro     --address AA:BB:CC:DD:EE:FF
     python3 mobapad.py raw      --address ... --cmd 0x86 --data 01,00
 
 Scanning still uses bleak (advertisements are fine); everything else goes

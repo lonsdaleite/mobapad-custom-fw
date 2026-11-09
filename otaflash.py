@@ -6,6 +6,9 @@
     python3 tools/otaflash.py flash IMAGE --address MAC              # dry run: connects, writes nothing
     python3 tools/otaflash.py flash IMAGE --address MAC --confirm    # the real thing
 
+On macOS run it with the venv that has bleak and pass the advertised name instead of a MAC
+(`--address M12-HD-L`); att_bleak.py is the transport there.
+
 IMAGE is an encrypted `.bin` (as served by the update server or built by `patch_axis_usb.py`) or
 the decrypted plaintext; both are recognised. `plan` never touches the radio. A `flash` without
 `--confirm` connects, identifies the half, runs every safety check and stops before frame 0x50.
@@ -42,7 +45,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import select
 import subprocess
 import sys
 import time
@@ -50,10 +52,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import jlfw  # noqa: E402
-from att import Att, AttError, Handles, LinkLost, connect, find_ranges  # noqa: E402
+from att import Att, AttError, Handles, LinkLost, find_ranges, open_link  # noqa: E402
 
 ATT_PAYLOAD = 20          # negotiated MTU is 23; the app writes 20-byte chunks too
-ATT_NOTIFY, ATT_INDICATE = 0x1B, 0x1D
 CMD_READY, CMD_BLOCK, CMD_PROGRESS, CMD_DONE = 0x50, 0x51, 0x52, 0x53
 OBSERVED_BLOCK = 400      # what the device answered to 0x51 in every capture
 MIN_BATTERY = 50          # refuse below this; losing power mid-write is the classic brick
@@ -159,19 +160,10 @@ class OtaLink:
             left = deadline - time.time()
             if left <= 0:
                 return None
-            r, _, _ = select.select([self.att.sock], [], [], left)
-            if not r:
+            event = self.att.next_notification(left)
+            if event is None:
                 return None
-            try:
-                pdu = self.att.sock.recv(1024)
-            except OSError as e:
-                raise LinkLost(f"link dropped while reading: {e}") from e
-            if not pdu:
-                raise LinkLost("link closed by the device")
-            if pdu[0] not in (ATT_NOTIFY, ATT_INDICATE) or len(pdu) < 3:
-                continue
-            handle = pdu[1] | pdu[2] << 8
-            body = pdu[3:]
+            handle, body = event
             if self.verbose:
                 print(f"  <- [{handle:#06x}] {hexs(body)}", file=sys.stderr)
             if handle == self.h.ctrl and len(body) >= 3 and body[1] | body[2] << 8 == cmd:
@@ -228,9 +220,9 @@ class Device:
     def __init__(self, address: str, wait: float, verbose: bool):
         print(f"connecting to {address} (press the half's button if it is asleep) …", file=sys.stderr)
         self.address = address
-        sock = connect(address, wait=wait)
-        self.att = Att(sock, verbose=verbose)
-        widen_link(address)
+        self.att = open_link(address, wait, verbose)
+        if sys.platform == "linux":
+            widen_link(address)
         ranges = find_ranges(self.att)
         for uuid in ("ff00", "ff10"):
             if uuid not in ranges:
@@ -239,7 +231,7 @@ class Device:
         self.ota = OtaHandles(*ranges["ff10"])
         self.att.notify_handle = self.kr.notify
         self.att.write_req(self.kr.cccd, b"\x01\x00")          # the app subscribes to FF02 first
-        self.name = ""
+        self.name = getattr(self.att, "advertised_name", "")  # macOS hides the 1800 service
         if "1800" in ranges:
             val = self.att.read_optional(ranges["1800"][0] + 2)
             if val:
@@ -417,12 +409,12 @@ def cmd_flash(args) -> None:
     print(f"sent {len(cipher)} bytes in {time.time() - t0:.1f}s. Holding the link 5 s like the app, "
           "then closing; the half reboots into the new image. Verify with `probe`.")
     time.sleep(5.0)
-    dev.att.sock.close()
+    dev.att.close()
 
 
 def main() -> int:
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--address", help="BLE MAC of the half")
+    common.add_argument("--address", help="BLE MAC on Linux; on macOS the advertised name (M12-HD-L) or CoreBluetooth UUID")
     common.add_argument("--wait", type=float, default=40.0, help="seconds to wait for it to advertise")
     common.add_argument("-v", "--verbose", action="store_true", help="dump frames")
 
@@ -450,7 +442,7 @@ def main() -> int:
 
     args = p.parse_args()
     if getattr(args, "cmd", None) in ("probe", "flash") and not args.address:
-        p.error("--address is required (tools/mobapad.py scan finds it)")
+        p.error("--address is required (Linux: tools/mobapad.py scan finds the MAC; macOS: M12-HD-L or M12-HD-R)")
     try:
         args.func(args)
     except (AttError, LinkLost) as e:
