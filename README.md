@@ -3,6 +3,9 @@
 Custom firmware for the **Mobapad M12 HD** Joy-Con style controller (both halves), plus a tool
 that flashes it over Bluetooth LE from **macOS or Linux**.
 
+**New: `switch2-native-v2` fixes waking the console with Home. If you flashed the first release,
+[update](#version-2-update-if-you-flashed-the-first-release).**
+
 # ⚠️ USE AT YOUR OWN RISK ⚠️
 
 **THIS IS NOT VENDOR SOFTWARE. FLASHING FIRMWARE CAN PERMANENTLY BRICK YOUR CONTROLLER.
@@ -42,6 +45,18 @@ stay paired after the console restarts. The Switch 2 protocol is not implemented
 firmware.
 
 Known limitation: charging while the console is fully powered off has not been checked.
+
+### Version 2: update if you flashed the first release
+
+The current files are `switch2-native-v2`. The first release (`switch2-native`, without `-v2`)
+could stop waking the console with Home once the console had been asleep for about a minute.
+Version 2 fixes that.
+
+To update, flash both halves with the `-v2` files, then attach them to the console. It shows
+"Paired" once for each half; that is expected and does not come back. If Home still does not wake
+the console, pair the halves again: System Settings → Controllers & Accessories → Disconnect
+Controllers, attach both halves to the console, then detach them and pair each one from
+Controllers → Change Grip/Order.
 
 ## `axisusb-autoconnect` and `axisusb`
 
@@ -118,13 +133,13 @@ and the flasher dies with `Abort trap: 6`. Allow Bluetooth when macOS asks.
 2. Flash the left half. Run this, then press any button on the half so that it shows up:
 
    ```
-   .venv/bin/python otaflash.py flash firmware/custom/M12-HD-L-0.33-switch2-native.bin --address M12-HD-L --wait 60 --confirm
+   .venv/bin/python otaflash.py flash firmware/custom/M12-HD-L-0.33-switch2-native-v2.bin --address M12-HD-L --wait 60 --confirm
    ```
 
 3. Flash the right half the same way:
 
    ```
-   .venv/bin/python otaflash.py flash firmware/custom/M12-HD-R-0.33-switch2-native.bin --address M12-HD-R --wait 60 --confirm
+   .venv/bin/python otaflash.py flash firmware/custom/M12-HD-R-0.33-switch2-native-v2.bin --address M12-HD-R --wait 60 --confirm
    ```
 
 Without `--confirm` the same command is a dry run that connects, runs every check and writes
@@ -142,8 +157,8 @@ an LXC or Docker container. No Python packages are needed.
 2. Flash, using the address you noted:
 
    ```
-   sudo python3 otaflash.py flash firmware/custom/M12-HD-L-0.33-switch2-native.bin --address AA:BB:CC:DD:EE:FF --confirm
-   sudo python3 otaflash.py flash firmware/custom/M12-HD-R-0.33-switch2-native.bin --address 11:22:33:44:55:66 --confirm
+   sudo python3 otaflash.py flash firmware/custom/M12-HD-L-0.33-switch2-native-v2.bin --address AA:BB:CC:DD:EE:FF --confirm
+   sudo python3 otaflash.py flash firmware/custom/M12-HD-R-0.33-switch2-native-v2.bin --address 11:22:33:44:55:66 --confirm
    ```
 
 ### Windows
@@ -169,7 +184,7 @@ that has always been enough to finish it.
 |---|---|
 | `firmware/custom/M12-HD-{L,R}-0.33-axisusb.bin` | gyro axis swap on USB only |
 | `firmware/custom/M12-HD-{L,R}-0.33-axisusb-autoconnect.bin` | automatic connection on the rails and gyro axis swap on USB |
-| `firmware/custom/M12-HD-{L,R}-0.33-switch2-native.bin` | native Switch 2 protocol on USB |
+| `firmware/custom/M12-HD-{L,R}-0.33-switch2-native-v2.bin` | native Switch 2 protocol on USB |
 | `otaflash.py` | the flasher |
 | `att.py`, `att_bleak.py`, `jlfw.py`, `mobapad.py` | modules the flasher needs, keep them next to it |
 
