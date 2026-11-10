@@ -53,10 +53,7 @@ could stop waking the console with Home once the console had been asleep for abo
 Version 2 fixes that.
 
 To update, flash both halves with the `-v2` files, then attach them to the console. It shows
-"Paired" once for each half; that is expected and does not come back. If Home still does not wake
-the console, pair the halves again: System Settings → Controllers & Accessories → Disconnect
-Controllers, attach both halves to the console, then detach them and pair each one from
-Controllers → Change Grip/Order.
+"Paired" once for each half; that is expected and does not come back.
 
 ## `axisusb-autoconnect` and `axisusb`
 
